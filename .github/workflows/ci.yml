@@ -1,0 +1,25 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc -b
+      - run: npm test
+      - run: npm run build
+      - name: Online play end-to-end test
+        run: |
+          npx wrangler dev --port 8787 > wrangler.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf localhost:8787 > /dev/null && break; sleep 1; done
+          npm run test:online || (cat wrangler.log; exit 1)
