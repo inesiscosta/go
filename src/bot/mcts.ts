@@ -217,6 +217,57 @@ function playoutWinner(b: Board, komi: number): Stone {
   return score > 0 ? BLACK : WHITE;
 }
 
+/**
+ * Guesses which stones are dead once play has ended, for the players to
+ * confirm. Plays the position out many times (alternating who moves first)
+ * and records who ends up owning each point; a group whose points mostly end
+ * up owned by the opponent is dead. Seeded, so the same position always gives
+ * the same suggestion (both online players compute it independently).
+ */
+export function estimateDead(b: Board, playouts = 200, seed = 1): number[] {
+  rngState = seed || 1;
+  const own = new Float32Array(b.cells.length); // + black, - white
+  const amaf = new Uint8Array(b.cells.length);
+  for (let i = 0; i < playouts; i++) {
+    const c = b.clone();
+    c.passes = 0;
+    c.koPoint = -1;
+    c.toPlay = i % 2 === 0 ? BLACK : WHITE;
+    playout(c, amaf);
+    for (const p of b.points()) {
+      let owner = c.cells[p];
+      if (owner === EMPTY) {
+        let around = 0;
+        for (let k = 0; k < 4; k++) {
+          const nc = c.cells[p + c.dirs[k]];
+          if (nc === BLACK || nc === WHITE) around |= nc;
+        }
+        owner = around;
+      }
+      if (owner === BLACK) own[p]++;
+      else if (owner === WHITE) own[p]--;
+    }
+  }
+
+  const dead: number[] = [];
+  const seen = new Uint8Array(b.cells.length);
+  for (const p of b.points()) {
+    const color = b.cells[p];
+    if ((color !== BLACK && color !== WHITE) || seen[p]) continue;
+    const group = b.group(p);
+    let sum = 0;
+    for (const q of group) {
+      seen[q] = 1;
+      sum += own[q];
+    }
+    // Average ownership from this group's point of view, in [-1, 1]. Below
+    // -0.2 means the opponent ends up with these points at least 60% of the time.
+    const mine = (color === BLACK ? sum : -sum) / (group.length * playouts);
+    if (mine < -0.2) dead.push(...group);
+  }
+  return dead;
+}
+
 function newNode(move: number, player: Stone, priorN: number, priorW: number): Node {
   return { move, player, children: null, n: priorN, w: priorW, real: 0, rn: 0, rw: 0 };
 }

@@ -205,6 +205,65 @@ async function main() {
   b2.send({ type: 'hello', token: bToken });
   check('swapped seats persist across reconnects', (await b2.wait(isWelcome))?.color === 'black');
 
+  // b2 is black now, a2 white.
+  m = b2.mark();
+  b2.send({ type: 'dead', stones: [] });
+  check("can't mark dead stones during play", !!(await b2.wait(isError, m)));
+
+  m = a2.mark();
+  b2.send({ type: 'move', move: 'D4', at: 0 });
+  await a2.wait(stateWhere((s) => s.moves.length === 1), m);
+  a2.send({ type: 'move', move: 'E5', at: 1 });
+  await a2.wait(stateWhere((s) => s.moves.length === 2), m);
+  b2.send({ type: 'move', move: 'pass', at: 2 });
+  await a2.wait(stateWhere((s) => s.moves.length === 3), m);
+  a2.send({ type: 'move', move: 'pass', at: 3 });
+  const ended = await a2.wait(stateWhere((s) => s.moves.length === 4), m);
+  check(
+    'two passes start scoring instead of ending the game',
+    !!ended && ended.state.result === null && ended.state.dead === null,
+    ended?.state,
+  );
+
+  m = b2.mark();
+  b2.send({ type: 'dead', stones: ['A1'] });
+  check('only stones can be marked dead', !!(await b2.wait(isError, m)));
+
+  m = a2.mark();
+  b2.send({ type: 'dead', stones: ['E5'] });
+  const marked = await a2.wait(stateWhere((s) => s.dead?.join() === 'E5'), m);
+  check('marks are shared with the opponent', !!marked);
+  const v1 = marked?.state.markVersion ?? -1;
+
+  m = a2.mark();
+  a2.send({ type: 'accept', version: v1 - 1 });
+  await sleep(300);
+  check('accepting marks you never saw is ignored', a2.latestState()?.accepted.white === false);
+
+  a2.send({ type: 'accept', version: v1 });
+  check('accepting is shared', !!(await b2.wait(stateWhere((s) => s.accepted.white && !s.result), b2.mark() - 1)));
+
+  m = a2.mark();
+  b2.send({ type: 'dead', stones: ['E5', 'D4'] });
+  const changed = await a2.wait(stateWhere((s) => s.dead?.length === 2), m);
+  check('changing the marks clears acceptance', changed?.state.accepted.white === false);
+
+  m = a2.mark();
+  b2.send({ type: 'dead', stones: ['E5'] });
+  const back = await a2.wait(stateWhere((s) => s.dead?.join() === 'E5'), m);
+  const v = back?.state.markVersion ?? -1;
+  b2.send({ type: 'accept', version: v });
+  a2.send({ type: 'accept', version: v });
+  const scored = await a2.wait(stateWhere((s) => s.result !== null), m);
+  check(
+    'both accepting scores the game with the dead stones removed',
+    scored?.state.result?.reason === 'score' &&
+      scored.state.result.winner === 'black' &&
+      scored.state.result.black === 81 &&
+      scored.state.result.white === 7.5,
+    scored?.state.result,
+  );
+
   {
     const r = (await (
       await fetch(`${BASE}/api/rooms`, { method: 'POST', body: JSON.stringify({ size: 9, komi: 7.5, color: 'black' }) })

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { estimateDead } from '../bot/mcts';
 import { BLACK, Board, PASS, WHITE, type Stone } from '../engine/board';
-import type { GameView, Outcome } from '../game/types';
+import type { GameView, Outcome, Scoring } from '../game/types';
+import { toggleGroup } from '../game/useGame';
 import {
   CLOSE_FULL,
   CLOSE_NOT_FOUND,
@@ -167,6 +169,37 @@ export function useOnlineGame(code: string): OnlineGame {
       reason: r.reason,
       black: r.black ?? black,
       white: r.white ?? white + state.komi,
+      dead: state.dead ? new Set(state.dead.map((s) => board.point(s))) : undefined,
+    };
+  }
+
+  // Scoring: both passed and there's no result yet.
+  const inScoring = !!board && !!state && board.isOver && !state.result;
+  const dead = useMemo(
+    () => new Set(board && state?.dead ? state.dead.map((s) => board.point(s)) : []),
+    [board, state?.dead],
+  );
+
+  // Someone has to propose the first marks: black, or white if black isn't
+  // here. The estimate is seeded, so if both do it they send the same marks.
+  const proposeFirst =
+    inScoring && state!.dead === null && !!color && (color === 'black' || state!.players.black !== 'online');
+  useEffect(() => {
+    if (!proposeFirst || !board) return;
+    send({ type: 'dead', stones: estimateDead(board).map((p) => board.coord(p)) });
+  }, [proposeFirst, board, send]);
+
+  let scoring: Scoring | null = null;
+  if (inScoring && board && state) {
+    const opp = color === 'black' ? 'white' : 'black';
+    const me = color ? state.accepted[color] : false;
+    scoring = {
+      dead,
+      toggle: color
+        ? (p) => send({ type: 'dead', stones: [...toggleGroup(board, dead, p)].map((q) => board.coord(q)) })
+        : undefined,
+      accept: color && !me && state.dead !== null ? () => send({ type: 'accept', version: state.markVersion }) : undefined,
+      accepted: color ? { me, them: state.accepted[opp] } : undefined,
     };
   }
 
@@ -181,6 +214,7 @@ export function useOnlineGame(code: string): OnlineGame {
         confidence: null,
         error,
         outcome,
+        scoring,
         play,
         pass: () => play(PASS),
         canUndo: false,

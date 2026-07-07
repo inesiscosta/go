@@ -27,6 +27,21 @@ interface Stored {
   moves: string[];
   result: Result | null;
   rematch: Record<Color, boolean>;
+  dead: string[] | null;
+  markVersion: number;
+  accepted: Record<Color, boolean>;
+}
+
+const NO_ONE: Record<Color, boolean> = { black: false, white: false };
+
+/** Fills in fields added after a room was stored, so rooms from before scoring keep working. */
+function upgrade(room: Stored): Stored {
+  return {
+    ...room,
+    dead: room.dead ?? null,
+    markVersion: room.markVersion ?? 0,
+    accepted: room.accepted ?? { ...NO_ONE },
+  };
 }
 
 interface Attachment {
@@ -61,7 +76,8 @@ export class Room extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
-      this.room = (await ctx.storage.get<Stored>('room')) ?? null;
+      const stored = await ctx.storage.get<Stored>('room');
+      this.room = stored ? upgrade(stored) : null;
       if (this.room) this.board = this.replay(this.room);
     });
   }
@@ -88,7 +104,10 @@ export class Room extends DurableObject<Env> {
       seats: { black: null, white: null, [color]: await sha256(token) } as Record<Color, string | null>,
       moves: [],
       result: null,
-      rematch: { black: false, white: false },
+      rematch: { ...NO_ONE },
+      dead: null,
+      markVersion: 0,
+      accepted: { ...NO_ONE },
     };
     this.board = new Board(size);
     await this.save();
@@ -140,6 +159,8 @@ export class Room extends DurableObject<Env> {
       this.room.result = { winner: other(me), reason: 'resign' };
       return this.commit();
     }
+    if (msg.type === 'dead') return this.markDead(ws, msg.stones);
+    if (msg.type === 'accept') return this.accept(me, msg.version);
     if (msg.type === 'rematch') {
       if (!this.room.result) return;
       this.room.rematch[me] = true;
@@ -149,7 +170,10 @@ export class Room extends DurableObject<Env> {
         this.room.seats = { black: white, white: black };
         this.room.moves = [];
         this.room.result = null;
-        this.room.rematch = { black: false, white: false };
+        this.room.rematch = { ...NO_ONE };
+        this.room.dead = null;
+        this.room.markVersion = 0;
+        this.room.accepted = { ...NO_ONE };
         this.board = new Board(this.room.size);
         for (const s of this.ctx.getWebSockets()) {
           const a = s.deserializeAttachment() as Attachment;
@@ -214,8 +238,42 @@ export class Room extends DurableObject<Env> {
 
     board.play(p);
     room.moves.push(board.coord(p));
-    if (board.isOver) {
-      const { black, white } = board.score();
+    // Two passes end play. The players then mark dead stones; the result comes once both accept.
+    await this.commit();
+  }
+
+  /** True between the second pass and the result. */
+  private get scoring(): boolean {
+    return !!this.board?.isOver && !this.room?.result;
+  }
+
+  private async markDead(ws: WebSocket, stones: unknown): Promise<void> {
+    const room = this.room!;
+    const board = this.board!;
+    if (!this.scoring) return this.send(ws, { type: 'error', message: 'Stones are marked dead only after both players pass.' });
+    if (!Array.isArray(stones) || stones.length > board.size * board.size) return;
+    const points = new Set<number>();
+    for (const s of stones) {
+      const p = typeof s === 'string' ? board.parseCoord(s) : null;
+      if (p === null || p < 0 || board.cells[p] === 0) return this.send(ws, { type: 'error', message: 'Only stones can be marked dead.' });
+      points.add(p);
+    }
+    const dead = [...points].sort((x, y) => x - y).map((p) => board.coord(p));
+    if (room.dead && dead.join() === room.dead.join()) return; // nothing changed (e.g. both players proposed the same marks)
+    room.dead = dead;
+    room.markVersion++;
+    room.accepted = { ...NO_ONE };
+    await this.commit();
+  }
+
+  private async accept(me: Color, version: unknown): Promise<void> {
+    const room = this.room!;
+    const board = this.board!;
+    if (!this.scoring || room.dead === null) return;
+    if (version !== room.markVersion) return; // they accepted marks that have since changed; fresh state is on its way
+    room.accepted[me] = true;
+    if (room.accepted.black && room.accepted.white) {
+      const { black, white } = board.scoreWithDead(room.dead.map((s) => board.point(s)));
       const w = white + room.komi;
       room.result = { winner: black === w ? null : black > w ? 'black' : 'white', reason: 'score', black, white: w };
     }
@@ -263,6 +321,9 @@ export class Room extends DurableObject<Env> {
       result: r.result,
       players: { black: this.presence('black'), white: this.presence('white') },
       rematch: r.rematch,
+      dead: r.dead,
+      markVersion: r.markVersion,
+      accepted: r.accepted,
     };
   }
 

@@ -6,6 +6,7 @@ Play the board game Go in your browser: against a Monte Carlo Tree Search bot, a
 - **A bot that runs entirely in your browser**, in a Web Worker, with three difficulty levels
 - **Online play** with room codes and invite links, on Cloudflare Workers and Durable Objects
 - Captures, suicide and ko rules, area scoring and komi
+- **Dead-stone marking** when both players pass: the engine suggests which stones are dead, you adjust and accept (online, both players must agree)
 - Undo, a live score preview and a territory overlay
 
 ## From coursework to web app
@@ -32,10 +33,11 @@ Each room is a [Durable Object](https://developers.cloudflare.com/durable-object
 - **The server owns the game.** Clients only send the move they want, e.g. `{ "type": "move", "move": "D4", "at": 12 }`. The room checks the turn and legality with the same rules engine the browser uses, then broadcasts the new state. A modified client can't make an illegal move or play for the other side.
 - **Room codes identify a game; tokens prove who you are.** Joining gives you a random seat token, which your browser keeps and sends in the first WebSocket message, never in a URL. Only its SHA-256 hash is stored. Refreshing or reconnecting gets your seat back; anyone else with the link can only watch.
 - **`at` is the move number the client expects**, so double clicks and stale tabs can't play twice.
+- **Both players agree on the score.** After two passes, either player can mark or unmark dead stones; any change clears both acceptances, and an acceptance names the version of the marks it saw, so nobody accepts marks they haven't seen. The room computes the result once both accept.
 - **Resilient**: automatic reconnection with backoff, opponent presence (online or disconnected), rematches with colours swapped, and rooms expire after a week without activity.
 - **Cheap to run**: the WebSocket Hibernation API lets idle rooms leave memory without dropping connections.
 
-The protocol is defined in [`src/online/protocol.ts`](src/online/protocol.ts), shared by browser and server. [`scripts/online-smoke.ts`](scripts/online-smoke.ts) tests a running server end to end over real WebSockets, 30 checks in all, including:
+The protocol is defined in [`src/online/protocol.ts`](src/online/protocol.ts), shared by browser and server. [`scripts/online-smoke.ts`](scripts/online-smoke.ts) tests a running server end to end over real WebSockets, 45 checks in all, including:
 - out-of-turn, illegal and malformed moves
 - spectators
 - reconnecting with the right or a wrong token
@@ -77,5 +79,5 @@ worker/room.ts           Durable Object: one authoritative game room
 ## Roadmap
 
 - Undo requests in online games (the opponent approves)
-- Dead-stone marking at the end of the game, so players don't have to capture dead stones before passing
+- Resuming play from the scoring phase when players disagree about which stones are dead
 - Game records (SGF) export

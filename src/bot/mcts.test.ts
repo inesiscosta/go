@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BLACK, Board, PASS, WHITE, type Stone } from '../engine/board';
-import { chooseMove } from './mcts';
+import { chooseMove, estimateDead } from './mcts';
 
 /** 9×9 board from rows written top (row 9) to bottom (row 1). */
 function setup(rows: string[], toPlay: Stone, lastMove?: string): Board {
@@ -74,4 +74,54 @@ describe('bot', () => {
       expect(blackWins).toBe(botColor === BLACK);
     }
   }, 30_000);
+});
+
+describe('estimateDead', () => {
+  it('marks a lone stone inside enemy territory and nothing else', () => {
+    // Black walls off the right side; white's G7 stone has no room to live.
+    // White's wall on the left is alive.
+    const b = setup(
+      [
+        '...OX....',
+        '...OX....',
+        '...OX.O..',
+        '...OX....',
+        '...OX....',
+        '...OX....',
+        '...OX....',
+        '...OX....',
+        '...OX....',
+      ],
+      BLACK,
+    );
+    const dead = estimateDead(b).map((p) => b.coord(p));
+    expect(dead).toEqual(['G7']);
+  });
+
+  it('leaves a group with two eyes alive, even inside enemy territory', () => {
+    const b = setup(
+      [
+        '...OX....',
+        '...OX....',
+        '...OXOOOO',
+        '...OXO.O.',
+        '...OXOOOO',
+        '...OXXXXX',
+        '...OX....',
+        '...OX....',
+        '...OX....',
+      ],
+      BLACK,
+    );
+    expect(estimateDead(b)).toEqual([]);
+  });
+
+  it('scores with the dead stones removed', () => {
+    const b = setup(['...OX....', '...OX....', '...OX.O..', ...Array(6).fill('...OX....')], BLACK);
+    const asIs = b.score();
+    const agreed = b.scoreWithDead([b.point('G7')]);
+    expect(asIs.black).toBe(9); // just black's wall: the right side touches the white stone
+    expect(agreed.black).toBe(45); // the wall plus all 36 points behind it
+    expect(agreed.white).toBe(36);
+  });
 });

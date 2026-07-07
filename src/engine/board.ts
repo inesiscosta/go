@@ -10,7 +10,8 @@
  *  - captures, suicide is illegal
  *  - ko: a move may not recreate the position from before the opponent's last move
  *  - area scoring: stones on the board + empty regions bordered by a single colour
- *  - the game ends after two consecutive passes
+ *  - two consecutive passes end play; the players then mark dead stones,
+ *    which are removed before counting (see scoreWithDead)
  */
 
 export const EMPTY = 0;
@@ -320,6 +321,17 @@ export class Board {
       }
     }
     return { black, white, territory };
+  }
+
+  /**
+   * Area score once the players have agreed which stones are dead: those are
+   * taken off the board first, so their points (and any empty region they
+   * were the only thing spoiling) count for the side that surrounds them.
+   */
+  scoreWithDead(dead: Iterable<number>): { black: number; white: number; territory: Uint8Array } {
+    const b = this.clone();
+    for (const p of dead) if (b.cells[p] === BLACK || b.cells[p] === WHITE) b.cells[p] = EMPTY;
+    return b.score();
   }
 
   /** Board as a string of '.', 'X' (black), 'O' (white) in reading order. */

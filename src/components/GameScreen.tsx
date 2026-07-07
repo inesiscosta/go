@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { BLACK, PASS, WHITE, type Stone } from '../engine/board';
-import type { GameView, Outcome } from '../game/types';
+import type { GameView } from '../game/types';
 import { useGameSounds, useMuted } from '../game/useGameSounds';
 import { GoBoard } from './GoBoard';
 
@@ -40,19 +40,16 @@ interface Props {
 }
 
 export function GameScreen({ game, komi, meta, onMenu, endActions, extraActions, header }: Props) {
-  const { board, myColor } = game;
+  const { board, myColor, scoring, outcome } = game;
   const [showTerritory, setShowTerritory] = useState(false);
 
-  const score = board.score();
+  // Dead stones come off the board before counting: the ones being marked, or the ones agreed at the end.
+  const dead = scoring?.dead ?? outcome?.dead;
+  const score = dead ? board.scoreWithDead(dead) : board.score();
   const black = score.black;
   const white = score.white + komi;
-  const outcome: Outcome | null =
-    game.outcome ??
-    (board.isOver
-      ? { winner: black === white ? null : black > white ? BLACK : WHITE, reason: 'score', black, white }
-      : null);
   const over = outcome !== null;
-  const showScore = showTerritory || (over && outcome.reason === 'score');
+  const showScore = showTerritory || !!scoring || (over && outcome.reason === 'score');
   useGameSounds(board, outcome, myColor);
   const [muted, setMuted] = useMuted();
 
@@ -69,7 +66,8 @@ export function GameScreen({ game, komi, meta, onMenu, endActions, extraActions,
           ? `${w} ${verb} by resignation`
           : `${w} ${verb} by ${Math.abs(outcome.black - outcome.white)}`;
     }
-  } else if (game.status) status = game.status;
+  } else if (scoring) status = 'Mark dead stones';
+  else if (game.status) status = game.status;
   else if (game.thinking) status = `${game.opponentName} is thinking…`;
   else if (myColor !== null) status = game.isMyTurn ? 'Your move' : `${game.opponentName}'s move`;
   else status = `${colorName(board.toPlay)} to play`;
@@ -83,8 +81,10 @@ export function GameScreen({ game, komi, meta, onMenu, endActions, extraActions,
         <GoBoard
           board={board}
           interactive={game.isMyTurn && !over}
-          showTerritory={showScore}
+          territory={showScore ? score.territory : null}
           onPlay={game.play}
+          dead={dead}
+          onMark={scoring?.toggle}
         />
       </div>
 
@@ -113,7 +113,20 @@ export function GameScreen({ game, komi, meta, onMenu, endActions, extraActions,
             {status}
           </h2>
         </div>
-        {passedBy && !over && (
+        {scoring && (
+          <p className="hint">
+            {scoring.toggle
+              ? 'Both players passed. Click any group that could not survive to mark it dead (click again to bring it back). Dead stones count as captured. '
+              : 'Both players passed and are marking dead stones. '}
+            {scoring.accepted &&
+              (scoring.accepted.me
+                ? 'Waiting for your opponent to accept.'
+                : scoring.accepted.them
+                  ? 'Your opponent accepted these marks.'
+                  : '')}
+          </p>
+        )}
+        {passedBy && !over && !scoring && (
           <p className="hint">
             {who(passedBy)} passed. {game.isMyTurn || myColor === null ? 'Pass too to end the game.' : ''}
           </p>
@@ -126,7 +139,7 @@ export function GameScreen({ game, komi, meta, onMenu, endActions, extraActions,
 
         <div className="players">
           {[BLACK, WHITE].map((c) => (
-            <div key={c} className={`player ${!over && board.toPlay === c ? 'to-play' : ''}`}>
+            <div key={c} className={`player ${!over && !scoring && board.toPlay === c ? 'to-play' : ''}`}>
               <span className={`swatch ${c === BLACK ? 'black' : 'white'}`} aria-hidden="true" />
               <div className="player-name">
                 <strong>{myColor === null ? colorName(c as Stone) : who(c as Stone)}</strong>
@@ -163,7 +176,21 @@ export function GameScreen({ game, komi, meta, onMenu, endActions, extraActions,
         )}
 
         <div className="actions">
-          {!over ? (
+          {scoring ? (
+            <>
+              {scoring.accept && (
+                <button className="primary" onClick={scoring.accept}>
+                  {scoring.accepted ? 'Accept score' : 'Done, count it'}
+                </button>
+              )}
+              {game.undo && (
+                <button onClick={game.undo} disabled={!game.canUndo}>
+                  Undo
+                </button>
+              )}
+              {extraActions}
+            </>
+          ) : !over ? (
             <>
               <button onClick={game.pass} disabled={!game.isMyTurn}>
                 Pass
@@ -192,7 +219,7 @@ export function GameScreen({ game, komi, meta, onMenu, endActions, extraActions,
             role="switch"
             type="checkbox"
             checked={showScore}
-            disabled={over}
+            disabled={over || !!scoring}
             onChange={(e) => setShowTerritory(e.target.checked)}
           />
           Show score if the game ended now
@@ -202,8 +229,9 @@ export function GameScreen({ game, komi, meta, onMenu, endActions, extraActions,
           <summary>How scoring works</summary>
           <p>
             Your score is your stones on the board plus the empty points only your stones surround
-            (area scoring). The board is scored exactly as it stands, so capture any dead stones
-            before you pass. The game ends when both players pass in a row.
+            (area scoring). Play ends when both players pass in a row. You then mark the stones
+            that couldn't survive as dead: they're taken off and count for the side surrounding
+            them, so you don't need to capture them before passing.
           </p>
         </details>
       </aside>

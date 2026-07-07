@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BLACK, Board, PASS, type Stone, WHITE } from '../engine/board';
+import { estimateDead } from '../bot/mcts';
 import type { BotRequest, BotResponse } from '../bot/worker';
-import type { GameView } from './types';
+import type { GameView, Outcome } from './types';
 
 export type Mode = 'bot' | 'local';
 export type Level = 'easy' | 'medium' | 'hard';
@@ -24,8 +25,40 @@ function searchOptions(level: Level, size: number, komi: number) {
 /** Keeps the bot from answering instantly, which feels abrupt. */
 const MIN_THINK_MS = 450;
 
+/** The dead-stone marks for one finished position. Stale (ignored) once the position changes, e.g. after an undo. */
+interface Marks {
+  board: Board;
+  dead: ReadonlySet<number>;
+  accepted: boolean;
+}
+
+/** Toggles the whole group at p in or out of the dead set. */
+export function toggleGroup(board: Board, dead: ReadonlySet<number>, p: number): Set<number> {
+  const next = new Set(dead);
+  const group = board.group(p);
+  const wasDead = dead.has(p);
+  for (const q of group) {
+    if (wasDead) next.delete(q);
+    else next.add(q);
+  }
+  return next;
+}
+
+export function finalOutcome(board: Board, dead: Iterable<number>, komi: number): Outcome {
+  const { black, white: w } = board.scoreWithDead(dead);
+  const white = w + komi;
+  return {
+    winner: black === white ? null : black > white ? BLACK : WHITE,
+    reason: 'score',
+    black,
+    white,
+    dead: new Set(dead),
+  };
+}
+
 export function useGame(settings: Settings): GameView {
   const [history, setHistory] = useState<Board[]>(() => [new Board(settings.size)]);
+  const [marks, setMarks] = useState<Marks | null>(null);
   const [thinking, setThinking] = useState(false);
   const [botWinrate, setBotWinrate] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -118,6 +151,23 @@ export function useGame(settings: Settings): GameView {
       ? history.length > 1
       : history.slice(0, -1).some((b) => b.toPlay !== botColor);
 
+  // Once both players pass, start from the engine's guess at the dead stones;
+  // the human adjusts it and accepts (the computer goes along with it).
+  const suggested = useMemo(() => (board.isOver ? new Set(estimateDead(board)) : null), [board]);
+  const current: Marks | null =
+    marks?.board === board ? marks : suggested ? { board, dead: suggested, accepted: false } : null;
+
+  const outcome = current?.accepted ? finalOutcome(board, current.dead, settings.komi) : null;
+
+  const scoring =
+    current && !current.accepted
+      ? {
+          dead: current.dead,
+          toggle: (p: number) => setMarks({ board, dead: toggleGroup(board, current.dead, p), accepted: false }),
+          accept: () => setMarks({ ...current, accepted: true }),
+        }
+      : null;
+
   return {
     board,
     myColor: botColor === null ? null : botColor === BLACK ? WHITE : BLACK,
@@ -126,7 +176,8 @@ export function useGame(settings: Settings): GameView {
     thinking,
     confidence: botWinrate,
     error,
-    outcome: null,
+    outcome,
+    scoring,
     play,
     pass,
     undo,

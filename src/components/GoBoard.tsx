@@ -13,11 +13,16 @@ const STAR_POINTS: Record<number, number[]> = {
 interface Props {
   board: Board;
   interactive: boolean;
-  showTerritory: boolean;
+  /** Owner of each point (BLACK, WHITE or 0), to draw as territory; null hides it. */
+  territory: Uint8Array | null;
   onPlay: (p: number) => void;
+  /** Stones marked dead, drawn faded with a cross. */
+  dead?: ReadonlySet<number>;
+  /** Marking mode (after both pass): clicking a stone calls this instead of playing. */
+  onMark?: (p: number) => void;
 }
 
-export function GoBoard({ board, interactive, showTerritory, onPlay }: Props) {
+export function GoBoard({ board, interactive, territory, onPlay, dead, onMark }: Props) {
   const n = board.size;
   const span = (n - 1) * CELL;
   const total = span + MARGIN * 2;
@@ -29,8 +34,21 @@ export function GoBoard({ board, interactive, showTerritory, onPlay }: Props) {
   const px = (x: number) => MARGIN + x * CELL;
   const py = (y: number) => MARGIN + (n - 1 - y) * CELL;
 
-  const territory = useMemo(() => (showTerritory ? board.score().territory : null), [board, showTerritory]);
-  const legal = useMemo(() => new Set(interactive ? board.legalMoves() : []), [board, interactive]);
+  const marking = !!onMark;
+  // While marking, the clickable points are the stones; otherwise the legal moves.
+  const legal = useMemo(
+    () =>
+      new Set(
+        marking ? board.points().filter((p) => board.cells[p] !== EMPTY) : interactive ? board.legalMoves() : [],
+      ),
+    [board, interactive, marking],
+  );
+  const clickable = interactive || marking;
+  const choose = (p: number) => {
+    if (!legal.has(p)) return;
+    if (onMark) onMark(p);
+    else onPlay(p);
+  };
 
   const cursorPoint = board.idx(cursor[0], cursor[1]);
   const ghost = keyboard ? cursorPoint : hover;
@@ -48,20 +66,22 @@ export function GoBoard({ board, interactive, showTerritory, onPlay }: Props) {
       const [dx, dy] = moves[e.key];
       setKeyboard(true);
       setCursor(([x, y]) => [Math.min(n - 1, Math.max(0, x + dx)), Math.min(n - 1, Math.max(0, y + dy))]);
-    } else if ((e.key === 'Enter' || e.key === ' ') && interactive) {
+    } else if ((e.key === 'Enter' || e.key === ' ') && clickable) {
       e.preventDefault();
       setKeyboard(true);
-      if (legal.has(cursorPoint)) onPlay(cursorPoint);
+      choose(cursorPoint);
     }
   }
 
-  const label = `${n} by ${n} Go board. ${board.toPlay === BLACK ? 'Black' : 'White'} to play. ${
-    board.lastMove === PASS ? '' : `Last move ${board.coord(board.lastMove)}.`
-  } Use arrow keys to choose a point and Enter to play.`;
+  const label = marking
+    ? `${n} by ${n} Go board, marking dead stones. ${dead?.size ?? 0} marked. Use arrow keys to choose a stone and Enter to mark or unmark its group.`
+    : `${n} by ${n} Go board. ${board.toPlay === BLACK ? 'Black' : 'White'} to play. ${
+        board.lastMove === PASS ? '' : `Last move ${board.coord(board.lastMove)}.`
+      } Use arrow keys to choose a point and Enter to play.`;
 
   return (
     <svg
-      className={keyboard ? 'board keyboard' : 'board'}
+      className={`board${keyboard ? ' keyboard' : ''}${marking ? ' marking' : ''}`}
       viewBox={`0 0 ${total} ${total}`}
       role="application"
       aria-label={label}
@@ -130,20 +150,28 @@ export function GoBoard({ board, interactive, showTerritory, onPlay }: Props) {
         const c = board.cells[p];
         if (c === EMPTY) return null;
         const [x, y] = board.xy(p);
+        const isDead = dead?.has(p) ?? false;
+        const r = CELL * 0.48;
         return (
-          <circle
-            key={`s${p}`}
-            className="stone"
-            cx={px(x)}
-            cy={py(y)}
-            r={CELL * 0.48}
-            fill={c === BLACK ? 'url(#stone-black)' : 'url(#stone-white)'}
-            filter="url(#stone-shadow)"
-          />
+          <g key={`s${p}`} className={isDead ? 'stone dead' : 'stone'}>
+            <circle
+              cx={px(x)}
+              cy={py(y)}
+              r={r}
+              fill={c === BLACK ? 'url(#stone-black)' : 'url(#stone-white)'}
+              filter={isDead ? undefined : 'url(#stone-shadow)'}
+            />
+            {isDead && (
+              <path
+                className={c === BLACK ? 'dead-mark on-black' : 'dead-mark on-white'}
+                d={`M${px(x) - r * 0.45} ${py(y) - r * 0.45}l${r * 0.9} ${r * 0.9}m0 ${-r * 0.9}l${-r * 0.9} ${r * 0.9}`}
+              />
+            )}
+          </g>
         );
       })}
 
-      {board.lastMove !== PASS && board.cells[board.lastMove] !== EMPTY && (() => {
+      {!marking && board.lastMove !== PASS && board.cells[board.lastMove] !== EMPTY && (() => {
         const [x, y] = board.xy(board.lastMove);
         return (
           <circle
@@ -178,7 +206,7 @@ export function GoBoard({ board, interactive, showTerritory, onPlay }: Props) {
         />
       )}
 
-      {interactive &&
+      {clickable &&
         board.points().map((p) => {
           const [x, y] = board.xy(p);
           return (
@@ -193,7 +221,7 @@ export function GoBoard({ board, interactive, showTerritory, onPlay }: Props) {
                 setKeyboard(false);
                 setHover(p);
               }}
-              onClick={() => legal.has(p) && onPlay(p)}
+              onClick={() => choose(p)}
             />
           );
         })}

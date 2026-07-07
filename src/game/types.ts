@@ -6,6 +6,23 @@ export interface Outcome {
   /** Area scores, komi included for white. */
   black: number;
   white: number;
+  /** The stones agreed dead, when the game was scored. */
+  dead?: ReadonlySet<number>;
+}
+
+/**
+ * After both players pass, they agree which stones are dead before the game
+ * is scored. Present only during that phase.
+ */
+export interface Scoring {
+  /** Points currently marked dead. */
+  dead: ReadonlySet<number>;
+  /** Marks or unmarks the whole group at p. Missing when you can't change the marks (spectators). */
+  toggle?: (p: number) => void;
+  /** Agrees to the current marks. Missing when you can't (spectators, or you already have). */
+  accept?: () => void;
+  /** Online only: who has agreed to the current marks. */
+  accepted?: { me: boolean; them: boolean };
 }
 
 /** What the game screen needs, whoever the opponent is. */
@@ -21,8 +38,9 @@ export interface GameView {
   /** The bot's estimate of its own winning chances. */
   confidence: number | null;
   error: string | null;
-  /** Set when the game ended some way other than two passes, e.g. resignation. */
+  /** Set once the game is over: resignation, or the score after dead stones were agreed. */
   outcome: Outcome | null;
+  scoring: Scoring | null;
   /** Replaces the computed status line, e.g. "Waiting for your opponent". */
   status?: string;
   play: (p: number) => void;

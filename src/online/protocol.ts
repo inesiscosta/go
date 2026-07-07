@@ -27,7 +27,11 @@ export type ClientMessage =
   /** `at` is the number of moves the client has seen, so stale or doubled clicks are ignored. */
   | { type: 'move'; move: string; at: number }
   | { type: 'resign' }
-  | { type: 'rematch' };
+  | { type: 'rematch' }
+  /** After both pass: replaces the set of stones marked dead ("D4"…). Clears both players' acceptance. */
+  | { type: 'dead'; stones: string[] }
+  /** Agrees to the marks. `version` is the markVersion the client saw, so you never accept marks you haven't seen. */
+  | { type: 'accept'; version: number };
 
 export type Presence = 'empty' | 'online' | 'offline';
 
@@ -49,6 +53,15 @@ export interface RoomState {
   players: Record<Color, Presence>;
   /** Which players asked for a rematch after the game ended. */
   rematch: Record<Color, boolean>;
+  /**
+   * Scoring phase (both passed, no result yet): the stones marked dead, or
+   * null until a player has proposed the first marks.
+   */
+  dead: string[] | null;
+  /** Bumped whenever the marks change. */
+  markVersion: number;
+  /** Who has agreed to the current marks. */
+  accepted: Record<Color, boolean>;
 }
 
 export type ServerMessage =

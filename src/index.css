@@ -961,3 +961,21 @@ h2 {
     font-size: 44px;
   }
 }
+
+.board.marking .hit:not(.hit-disabled) {
+  cursor: pointer;
+}
+.stone.dead {
+  opacity: 0.45;
+}
+.dead-mark {
+  fill: none;
+  stroke-width: 1.1;
+  stroke-linecap: round;
+}
+.dead-mark.on-black {
+  stroke: #fff;
+}
+.dead-mark.on-white {
+  stroke: #111;
+}
