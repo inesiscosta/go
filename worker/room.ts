@@ -30,17 +30,23 @@ interface Stored {
   dead: string[] | null;
   markVersion: number;
   accepted: Record<Color, boolean>;
+  startedAt: number | null;
+  times: number[];
+  endedAt: number | null;
 }
 
 const NO_ONE: Record<Color, boolean> = { black: false, white: false };
 
-/** Fills in fields added after a room was stored, so rooms from before scoring keep working. */
+/** Fills in fields added after a room was stored, so rooms from before scoring and clocks keep working. */
 function upgrade(room: Stored): Stored {
   return {
     ...room,
     dead: room.dead ?? null,
     markVersion: room.markVersion ?? 0,
     accepted: room.accepted ?? { ...NO_ONE },
+    startedAt: room.startedAt ?? null,
+    times: room.times ?? [],
+    endedAt: room.endedAt ?? null,
   };
 }
 
@@ -108,6 +114,9 @@ export class Room extends DurableObject<Env> {
       dead: null,
       markVersion: 0,
       accepted: { ...NO_ONE },
+      startedAt: null,
+      times: [],
+      endedAt: null,
     };
     this.board = new Board(size);
     await this.save();
@@ -157,6 +166,7 @@ export class Room extends DurableObject<Env> {
     if (msg.type === 'resign') {
       if (this.room.result) return;
       this.room.result = { winner: other(me), reason: 'resign' };
+      this.room.endedAt ??= Date.now();
       return this.commit();
     }
     if (msg.type === 'dead') return this.markDead(ws, msg.stones);
@@ -174,6 +184,9 @@ export class Room extends DurableObject<Env> {
         this.room.dead = null;
         this.room.markVersion = 0;
         this.room.accepted = { ...NO_ONE };
+        this.room.times = [];
+        this.room.startedAt = Date.now();
+        this.room.endedAt = null;
         this.board = new Board(this.room.size);
         for (const s of this.ctx.getWebSockets()) {
           const a = s.deserializeAttachment() as Attachment;
@@ -218,6 +231,8 @@ export class Room extends DurableObject<Env> {
       }
     }
     ws.serializeAttachment({ color } satisfies Attachment);
+    // The clocks start once both seats are taken.
+    if (issued && room.seats.black && room.seats.white) room.startedAt ??= Date.now();
     if (issued) await this.save();
 
     this.send(ws, { type: 'welcome', color: color === 'spectator' ? null : color, token: issued });
@@ -238,7 +253,9 @@ export class Room extends DurableObject<Env> {
 
     board.play(p);
     room.moves.push(board.coord(p));
+    room.times.push(Date.now());
     // Two passes end play. The players then mark dead stones; the result comes once both accept.
+    if (board.isOver) room.endedAt = Date.now();
     await this.commit();
   }
 
@@ -324,6 +341,10 @@ export class Room extends DurableObject<Env> {
       dead: r.dead,
       markVersion: r.markVersion,
       accepted: r.accepted,
+      startedAt: r.startedAt,
+      times: r.times,
+      endedAt: r.endedAt,
+      now: Date.now(),
     };
   }
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { estimateDead } from '../bot/mcts';
 import { BLACK, Board, PASS, WHITE, type Stone } from '../engine/board';
-import type { GameView, Outcome, Scoring } from '../game/types';
+import type { Clock, GameView, Outcome, Scoring } from '../game/types';
 import { toggleGroup } from '../game/useGame';
 import {
   CLOSE_FULL,
@@ -69,6 +69,8 @@ export interface OnlineGame {
 
 export function useOnlineGame(code: string): OnlineGame {
   const [state, setState] = useState<RoomState | null>(null);
+  /** Server clock minus ours, measured when the latest state arrived. */
+  const [skew, setSkew] = useState(0);
   const [color, setColor] = useState<Color | null | undefined>(undefined);
   const [connection, setConnection] = useState<Connection>('connecting');
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +104,7 @@ export function useOnlineGame(code: string): OnlineGame {
           setColor(msg.color);
         } else if (msg.type === 'state') {
           setState(msg.state);
+          setSkew(msg.state.now - Date.now());
           setError(null);
         } else if (msg.type === 'error') {
           setError(msg.message);
@@ -203,6 +206,16 @@ export function useOnlineGame(code: string): OnlineGame {
     };
   }
 
+  // Server times, moved onto our clock.
+  const local = (t: number) => t - skew;
+  const clock: Clock = state
+    ? {
+        start: state.startedAt !== null ? local(state.startedAt) : state.times.length ? local(state.times[0]) : null,
+        times: state.times.map(local),
+        end: state.endedAt !== null ? local(state.endedAt) : null,
+      }
+    : { start: null, times: [], end: null };
+
   const view: GameView | null = board
     ? {
         board,
@@ -215,6 +228,7 @@ export function useOnlineGame(code: string): OnlineGame {
         error,
         outcome,
         scoring,
+        clock,
         play,
         pass: () => play(PASS),
         canUndo: false,

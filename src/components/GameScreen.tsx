@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { BLACK, PASS, WHITE, type Stone } from '../engine/board';
-import type { GameView } from '../game/types';
+import type { Clock, GameView } from '../game/types';
 import { useGameSounds, useMuted } from '../game/useGameSounds';
 import { GoBoard } from './GoBoard';
 
@@ -23,6 +23,41 @@ function SoundIcon({ muted }: { muted: boolean }) {
       )}
     </svg>
   );
+}
+
+/** Time each player has spent on their own turns, in ms (index by Stone). */
+function timeSpent(clock: Clock, now: number): [number, number, number] {
+  const spent: [number, number, number] = [0, 0, 0];
+  if (clock.start === null) return spent;
+  let prev = clock.start;
+  let toMove: Stone = BLACK;
+  for (const t of clock.times) {
+    spent[toMove] += Math.max(0, t - prev);
+    prev = t;
+    toMove = toMove === BLACK ? WHITE : BLACK;
+  }
+  spent[toMove] += Math.max(0, (clock.end ?? now) - prev);
+  return spent;
+}
+
+function formatTime(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+
+/** The current time, updated twice a second while `running`. */
+function useNow(running: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!running) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, [running]);
+  return running ? now : Date.now();
 }
 
 interface Props {
@@ -51,6 +86,11 @@ export function GameScreen({ game, komi, meta, onMenu, endActions, extraActions,
   const over = outcome !== null;
   const showScore = showTerritory || !!scoring || (over && outcome.reason === 'score');
   useGameSounds(board, outcome, myColor);
+
+  const clockRunning = game.clock.start !== null && game.clock.end === null && !over;
+  const now = useNow(clockRunning);
+  const spent = timeSpent(game.clock, now);
+  const total = game.clock.start === null ? 0 : (game.clock.end ?? now) - game.clock.start;
   const [muted, setMuted] = useMuted();
 
   const who = (c: Stone) => (myColor === null ? colorName(c) : c === myColor ? 'You' : game.opponentName);
@@ -108,7 +148,17 @@ export function GameScreen({ game, komi, meta, onMenu, endActions, extraActions,
         {header}
 
         <div className="status-block">
-          <p className="move-count">{board.moveNumber === 0 ? 'New game' : `Move ${board.moveNumber}`}</p>
+          <p className="move-count">
+            {board.moveNumber === 0 ? 'New game' : `Move ${board.moveNumber}`}
+            {game.clock.start !== null && (
+              <>
+                {' · '}
+                <span className="game-time" title="Game time">
+                  {formatTime(total)}
+                </span>
+              </>
+            )}
+          </p>
           <h2 className={`status ${over ? 'over' : ''}`} aria-live="polite">
             {status}
           </h2>
@@ -152,6 +202,13 @@ export function GameScreen({ game, komi, meta, onMenu, endActions, extraActions,
                       : 'moves first'}
                 </span>
               </div>
+              <span
+                className={`clock ${clockRunning && board.toPlay === c ? 'running' : ''}`}
+                title="Time spent thinking"
+                aria-label={`Time used: ${formatTime(spent[c])}`}
+              >
+                {formatTime(spent[c])}
+              </span>
               {c !== myColor && myColor !== null && game.thinking ? (
                 <span className="spinner" aria-label="Thinking" />
               ) : (

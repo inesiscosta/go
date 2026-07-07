@@ -962,6 +962,24 @@ h2 {
   }
 }
 
+.clock {
+  min-width: 3.5em;
+  padding: 3px 8px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.clock.running {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.game-time {
+  font-variant-numeric: tabular-nums;
+}
+
 .board.marking .hit:not(.hit-disabled) {
   cursor: pointer;
 }

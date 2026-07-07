@@ -25,6 +25,12 @@ function searchOptions(level: Level, size: number, komi: number) {
 /** Keeps the bot from answering instantly, which feels abrupt. */
 const MIN_THINK_MS = 450;
 
+/** A position and when it was reached (for the clocks). */
+interface Entry {
+  board: Board;
+  at: number;
+}
+
 /** The dead-stone marks for one finished position. Stale (ignored) once the position changes, e.g. after an undo. */
 interface Marks {
   board: Board;
@@ -57,7 +63,7 @@ export function finalOutcome(board: Board, dead: Iterable<number>, komi: number)
 }
 
 export function useGame(settings: Settings): GameView {
-  const [history, setHistory] = useState<Board[]>(() => [new Board(settings.size)]);
+  const [history, setHistory] = useState<Entry[]>(() => [{ board: new Board(settings.size), at: Date.now() }]);
   const [marks, setMarks] = useState<Marks | null>(null);
   const [thinking, setThinking] = useState(false);
   const [botWinrate, setBotWinrate] = useState<number | null>(null);
@@ -65,7 +71,7 @@ export function useGame(settings: Settings): GameView {
   const worker = useRef<Worker | null>(null);
   const requestId = useRef(0);
 
-  const board = history[history.length - 1];
+  const board = history[history.length - 1].board;
   const botColor = settings.mode === 'bot' ? (settings.humanColor === BLACK ? WHITE : BLACK) : null;
   const isHumanTurn = !board.isOver && board.toPlay !== botColor;
 
@@ -82,10 +88,10 @@ export function useGame(settings: Settings): GameView {
 
   const apply = useCallback((p: number) => {
     setHistory((h) => {
-      const next = h[h.length - 1].clone();
+      const next = h[h.length - 1].board.clone();
       if (!next.isLegal(p)) return h;
       next.play(p);
-      return [...h, next];
+      return [...h, { board: next, at: Date.now() }];
     });
   }, []);
 
@@ -140,8 +146,8 @@ export function useGame(settings: Settings): GameView {
       let n = h.length - 1;
       if (n === 0) return h;
       n--;
-      if (botColor !== null) while (n > 0 && h[n].toPlay === botColor) n--;
-      if (botColor !== null && h[n].toPlay === botColor) return h; // bot moves first; nothing to undo
+      if (botColor !== null) while (n > 0 && h[n].board.toPlay === botColor) n--;
+      if (botColor !== null && h[n].board.toPlay === botColor) return h; // bot moves first; nothing to undo
       return h.slice(0, n + 1);
     });
   }, [botColor, stopBot]);
@@ -149,7 +155,7 @@ export function useGame(settings: Settings): GameView {
   const canUndo =
     botColor === null
       ? history.length > 1
-      : history.slice(0, -1).some((b) => b.toPlay !== botColor);
+      : history.slice(0, -1).some((e) => e.board.toPlay !== botColor);
 
   // Once both players pass, start from the engine's guess at the dead stones;
   // the human adjusts it and accepts (the computer goes along with it).
@@ -178,6 +184,11 @@ export function useGame(settings: Settings): GameView {
     error,
     outcome,
     scoring,
+    clock: {
+      start: history[0].at,
+      times: history.slice(1).map((e) => e.at),
+      end: board.isOver ? history[history.length - 1].at : null,
+    },
     play,
     pass,
     undo,

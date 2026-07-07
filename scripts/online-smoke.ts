@@ -224,6 +224,10 @@ async function main() {
     !!ended && ended.state.result === null && ended.state.dead === null,
     ended?.state,
   );
+  check(
+    'moves are timestamped and the clocks stop',
+    !!ended && ended.state.times.length === 4 && ended.state.startedAt !== null && ended.state.endedAt !== null,
+  );
 
   m = b2.mark();
   b2.send({ type: 'dead', stones: ['A1'] });

@@ -25,6 +25,16 @@ export interface Scoring {
   accepted?: { me: boolean; them: boolean };
 }
 
+/** Wall-clock times (local epoch ms) for the players' clocks. */
+export interface Clock {
+  /** When the game started, or null if it hasn't (waiting for an opponent). */
+  start: number | null;
+  /** When each move was played, in order. */
+  times: readonly number[];
+  /** When the clocks stopped (play ended), or null while they run. */
+  end: number | null;
+}
+
 /** What the game screen needs, whoever the opponent is. */
 export interface GameView {
   board: Board;
@@ -41,6 +51,7 @@ export interface GameView {
   /** Set once the game is over: resignation, or the score after dead stones were agreed. */
   outcome: Outcome | null;
   scoring: Scoring | null;
+  clock: Clock;
   /** Replaces the computed status line, e.g. "Waiting for your opponent". */
   status?: string;
   play: (p: number) => void;

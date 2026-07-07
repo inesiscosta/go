@@ -62,6 +62,14 @@ export interface RoomState {
   markVersion: number;
   /** Who has agreed to the current marks. */
   accepted: Record<Color, boolean>;
+  /** Server time (epoch ms) the game started, once both players were seated; null before. */
+  startedAt: number | null;
+  /** Server time of each move, parallel to `moves`. */
+  times: number[];
+  /** Server time play ended (second pass or resignation); null while the clocks run. */
+  endedAt: number | null;
+  /** Server time when this state was sent, so clients can correct for clock skew. */
+  now: number;
 }
 
 export type ServerMessage =
