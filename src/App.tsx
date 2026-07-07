@@ -1,5 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { BLACK, WHITE, type Stone } from './engine/board';
+import { ClassicGame } from './components/ClassicGame';
 import { LocalGame } from './components/LocalGame';
 import { OnlineGame } from './components/OnlineGame';
 import type { Level, Mode, Settings } from './game/useGame';
@@ -12,11 +13,49 @@ function roomFromUrl(): string | null {
   return raw ? normalizeCode(raw) : null;
 }
 
+const classicFromUrl = () => new URLSearchParams(location.search).has('classic');
+
 function goToRoom(code: string | null) {
   history.pushState(null, '', code ? `/?room=${code}` : '/');
 }
 
 type ColorChoice = 'black' | 'white' | 'random';
+
+/** Typing this on the menu (outside text fields), or clicking the logo 3 times quickly, opens the 2023 version. */
+const SECRET = '2023';
+
+/** Clicks on the logo that open the 2023 version, if they all land within CLICKS_WINDOW_MS. */
+const CLICKS = 3;
+const CLICKS_WINDOW_MS = 1000;
+
+/** Returns a click handler that calls `onSecret` after CLICKS quick clicks; slower clicks start the count over. */
+function useQuickClicks(onSecret: () => void) {
+  const clicks = useRef<number[]>([]);
+  return () => {
+    const now = performance.now();
+    clicks.current = [...clicks.current, now].filter((t) => now - t <= CLICKS_WINDOW_MS);
+    if (clicks.current.length >= CLICKS) {
+      clicks.current = [];
+      onSecret();
+    }
+  };
+}
+
+/** Calls `onSecret` when SECRET is typed on the page, as long as nothing else is being typed into. */
+function useSecretWord(active: boolean, onSecret: () => void) {
+  useEffect(() => {
+    if (!active) return;
+    let typed = '';
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (e.metaKey || e.ctrlKey || e.altKey || target?.closest('input, textarea, select, [contenteditable]')) return;
+      typed = (typed + e.key).slice(-SECRET.length);
+      if (typed === SECRET) onSecret();
+    };
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, [active, onSecret]);
+}
 
 function ModeIcon({ kind }: { kind: 'bot' | 'local' | 'online' }) {
   return (
@@ -105,6 +144,10 @@ export default function App() {
   const [color, setColor] = useState<ColorChoice>('black');
   const [komi, setKomi] = useState(7.5);
   const [game, setGame] = useState<{ settings: Settings; key: number } | null>(null);
+  const [classic, setClassic] = useState(classicFromUrl);
+  const openClassic = useCallback(() => setClassic(true), []);
+  useSecretWord(!room && !game && !classic, openClassic);
+  const onLogoClick = useQuickClicks(openClassic);
 
   async function start() {
     setMenuError(null);
@@ -149,6 +192,16 @@ export default function App() {
       />
     );
 
+  if (classic)
+    return (
+      <ClassicGame
+        onMenu={() => {
+          if (classicFromUrl()) history.replaceState(null, '', '/');
+          setClassic(false);
+        }}
+      />
+    );
+
   if (game)
     return (
       <LocalGame
@@ -163,7 +216,7 @@ export default function App() {
     <main className="menu">
       <header className="menu-header">
         <h1>
-          <span className="logo" aria-hidden="true">
+          <span className="logo" aria-hidden="true" onClick={onLogoClick}>
             <span />
             <span />
           </span>
@@ -291,9 +344,13 @@ export default function App() {
       <footer className="menu-footer">
         <p>Started life as a text-based Python game for a first-year programming course.</p>
         <p className="footer-links">
-          <a href="https://github.com/inesiscosta/Go/tree/original">See the original</a>
+          <button className="text-link" onClick={openClassic}>
+            Play the original
+          </button>
           <span aria-hidden="true">·</span>
-          <a href="https://github.com/inesiscosta/Go">Source</a>
+          <a href="https://github.com/inesiscosta/Go" target="_blank" rel="noopener noreferrer">Source code</a>
+          <span aria-hidden="true">·</span>
+          <a href="https://github.com/inesiscosta/Go/tree/original" target="_blank" rel="noopener noreferrer">Original source code</a>
         </p>
       </footer>
     </main>

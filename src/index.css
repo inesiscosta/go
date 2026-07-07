@@ -78,6 +78,21 @@ a {
 a:hover {
   text-decoration-color: currentColor;
 }
+/* A button that looks and behaves like a text link (for actions that aren't navigation) */
+.text-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--border-strong);
+  cursor: pointer;
+}
+.text-link:hover {
+  text-decoration-color: currentColor;
+}
 
 :focus-visible {
   outline: 2px solid var(--focus);
@@ -126,12 +141,14 @@ h2 {
   box-shadow: var(--shadow-sm);
   transition: background 0.15s, border-color 0.15s, transform 0.1s;
 }
+.secondary:hover,
 .actions button:not(.primary):hover:not(:disabled),
 .join button:hover,
 .invite-link button:hover {
   border-color: var(--border-strong);
   background: var(--surface-2);
 }
+.secondary:active,
 .actions button:active:not(:disabled) {
   transform: translateY(1px);
 }
@@ -206,6 +223,8 @@ h2 {
 .logo {
   display: inline-flex;
   filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.2));
+  /* Clicking it quickly is an easter egg, so don't select the heading on a triple click */
+  user-select: none;
 }
 .logo span {
   width: 32px;
@@ -996,4 +1015,87 @@ h2 {
 }
 .dead-mark.on-white {
   stroke: #111;
+}
+
+.classic {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 24px 16px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.classic-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.classic-header h2 {
+  margin: 0 0 6px;
+  font-family: var(--display);
+  font-size: 28px;
+}
+.classic-header p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.classic-header .classic-source {
+  margin-top: 8px;
+  font-size: 14px;
+}
+.classic-header code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+}
+.console {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #161412;
+  color: #ece6da;
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  cursor: text;
+}
+.console-output {
+  margin: 0;
+  height: min(60vh, 560px);
+  overflow: auto;
+  padding: 16px 18px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre;
+}
+.console-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px 14px;
+  border-top: 1px solid rgb(255 255 255 / 0.08);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+.console-input span {
+  color: #e0694f;
+}
+.console-input input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-transform: uppercase;
+}
+.console-input input:disabled {
+  opacity: 0.5;
+}
+.classic-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
