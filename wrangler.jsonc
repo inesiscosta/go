@@ -14,5 +14,15 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
   "routes": [{ "pattern": "go.inesiscosta.com", "custom_domain": true }],
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+  "env": {
+    "preview": {
+      "name": "go-preview",
+      "workers_dev": true,
+      "routes": [],
+      "durable_objects": {
+        "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+      }
+    }
+  }
 }
